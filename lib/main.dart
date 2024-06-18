@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -12,13 +13,24 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf_static/shelf_static.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:path/path.dart' as path;
+import 'package:permission_handler/permission_handler.dart';
+import 'package:http/http.dart' as http;
 
 final rand = Random();
 int portMin = 1024;
 int portMax = 65535;
 WebUri serverAddr = WebUri("http://localhost:8080");
-void main() async {
+
+Future main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb &&
+      kDebugMode &&
+      defaultTargetPlatform == TargetPlatform.android) {
+    await InAppWebViewController.setWebContentsDebuggingEnabled(kDebugMode);
+  }
+  await Permission.camera.request();
+  await Permission.microphone.request(); // if you need microphone permission
+
   var appDocDir = await getApplicationSupportDirectory();
   print("appDocDir:${appDocDir.path}");
   var webDir = Directory(path.join(appDocDir.path, "web"));
@@ -51,73 +63,133 @@ void main() async {
   // Enable content compression
   server.autoCompress = true;
   print('Serving at http://${server.address.host}:${server.port}');
-  runApp(NextChat());
+  runApp(const MaterialApp(home: MyApp()));
 }
 
-class NextChat extends StatelessWidget {
-  NextChat({super.key});
-  late InAppWebViewController webViewController;
-  final ValueNotifier<bool> showBackBtn = ValueNotifier<bool>(false);
+class MyApp extends StatefulWidget {
+  const MyApp({Key? key}) : super(key: key);
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  final GlobalKey webViewKey = GlobalKey();
+
+  InAppWebViewController? webViewController;
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-        title: 'NextChat',
-        home: Scaffold(
+    return PopScope(
+      canPop: false, //When false, blocks the current route from being popped.
+      onPopInvoked: (bool didPop) async {
+        if (didPop) {
+          return;
+        }
+        // detect Android back button click
+        final controller = webViewController;
+        if (controller != null) {
+          if (await controller.canGoBack()) {
+            controller.goBack();
+          } else {
+            final bool shouldPop = await _showBackDialog(context) ?? false;
+            if (shouldPop) {
+              // 如果用户选择退出应用,则退出应用
+              await SystemNavigator.pop();
+            }
+          }
+        }
+      },
+      child: Scaffold(
           appBar: AppBar(
+            title: Text('BRClient'),
             toolbarHeight: 0,
             systemOverlayStyle: const SystemUiOverlayStyle(
                 systemNavigationBarColor: Color(0xffe7f8ff)),
           ),
-          body: Stack(
-            children: [
-              InAppWebView(
-                  initialUrlRequest: URLRequest(url: serverAddr),
-                  initialSettings:
-                      InAppWebViewSettings(useOnDownloadStart: true),
-                  onWebViewCreated: (controller) {
-                    webViewController = controller;
-                  },
-                  onPageCommitVisible: (controller, url) {
-                    print("onPageCommitVisible: ${url}");
-                    if (url!.host == serverAddr.host) {
-                      showBackBtn.value = false;
-                    } else {
-                      showBackBtn.value = true;
+          body: Column(children: <Widget>[
+            Expanded(
+              child: InAppWebView(
+                key: webViewKey,
+                initialUrlRequest: URLRequest(url: serverAddr),
+                initialSettings: InAppWebViewSettings(
+                    useOnDownloadStart: true,
+                    allowsBackForwardNavigationGestures: true),
+                onWebViewCreated: (controller) {
+                  webViewController = controller;
+                },
+                onDownloadStartRequest: (controller, url) async {
+                  if (url.url.scheme == "data") {
+                    String? outputFile = await FilePicker.platform.saveFile(
+                        dialogTitle: 'Please select an output file:',
+                        fileName:
+                            'brclient_${DateTime.now().microsecondsSinceEpoch}.txt',
+                        bytes: url.url.data!.contentAsBytes());
+                    print("outputFile: $outputFile");
+                  }
+                },
+                onLongPressHitTestResult: (controller, hitTestResult) async {
+                  print("hitTestResult.type==========" +
+                      hitTestResult.type.toString());
+                  if (hitTestResult.type ==
+                      InAppWebViewHitTestResultType.IMAGE_TYPE) {
+                    // 处理长按图片事件
+                    final imageUrl = hitTestResult.extra;
+                    if (imageUrl != null) {
+                      await _saveBase64ImageToLocal(imageUrl);
                     }
-                  },
-                  //导出数据
-                  onDownloadStartRequest: (controller, url) async {
-                    if (url.url.scheme == "data") {
-                      String? outputFile = await FilePicker.platform.saveFile(
-                          dialogTitle: 'Please select an output file:',
-                          fileName:
-                              'nextchat_${DateTime.now().microsecondsSinceEpoch}.txt',
-                          bytes: url.url.data!.contentAsBytes());
-                      print("outputFile: $outputFile");
-                    }
-                  }),
-              Positioned(
-                  bottom: 20,
-                  left: 20,
-                  child: ValueListenableBuilder(
-                      valueListenable: showBackBtn,
-                      builder: (context, value, child) {
-                        if (value) {
-                          return IconButton(
-                            iconSize: 50,
-                            color: Colors.blue,
-                            onPressed: () {
-                              webViewController.goBack();
-                            },
-                            icon: const Icon(Icons.arrow_circle_left_outlined),
-                          );
-                        } else {
-                          return const SizedBox.shrink();
-                        }
-                      }))
-            ],
-          ),
-        ));
+                  }
+                },
+              ),
+            ),
+          ])),
+    );
   }
+}
+
+/// user has dismissed the modal without tapping a button.
+Future<bool?> _showBackDialog(BuildContext context) {
+  return showDialog<bool>(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: const Text('Are you sure?'),
+        content: const Text(
+          'Are you sure you want to exist this application?',
+        ),
+        actions: <Widget>[
+          TextButton(
+            style: TextButton.styleFrom(
+              textStyle: Theme.of(context).textTheme.labelLarge,
+            ),
+            child: const Text('Nevermind'),
+            onPressed: () {
+              Navigator.pop(context, false);
+            },
+          ),
+          TextButton(
+            style: TextButton.styleFrom(
+              textStyle: Theme.of(context).textTheme.labelLarge,
+            ),
+            child: const Text('Leave'),
+            onPressed: () {
+              Navigator.pop(context, true);
+            },
+          ),
+        ],
+      );
+    },
+  );
+}
+
+Future<void> _saveBase64ImageToLocal(String base64Image) async {
+  if (!base64Image.startsWith('data:image/png;base64,')) {
+    return;
+  }
+  final bytes = base64.decode(base64Image.split(',').last);
+  String? outputFile = await FilePicker.platform.saveFile(
+      dialogTitle: 'Please select an output file:',
+      fileName: 'brclient_${DateTime.now().microsecondsSinceEpoch}.png',
+      bytes: bytes);
+  print("Image saved to: $outputFile");
 }

@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "net.aithing" "\0"
-            VALUE "FileDescription", "nextchat" "\0"
+            VALUE "FileDescription", "brclient" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "nextchat" "\0"
+            VALUE "InternalName", "brclient" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2024 net.aithing. All rights reserved." "\0"
-            VALUE "OriginalFilename", "nextchat.exe" "\0"
-            VALUE "ProductName", "nextchat" "\0"
+            VALUE "OriginalFilename", "brclient.exe" "\0"
+            VALUE "ProductName", "BRClient" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
