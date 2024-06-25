@@ -1,4 +1,4 @@
-package net.aithing.nextchat;
+package com.damonai.brclient;
 
 import io.flutter.embedding.android.FlutterActivity;
 

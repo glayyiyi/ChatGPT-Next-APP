@@ -14,7 +14,6 @@ import 'package:shelf_static/shelf_static.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:path/path.dart' as path;
 import 'package:permission_handler/permission_handler.dart';
-import 'package:http/http.dart' as http;
 
 final rand = Random();
 int portMin = 1024;
@@ -23,17 +22,19 @@ WebUri serverAddr = WebUri("http://localhost:8080");
 
 Future main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  if (!kIsWeb &&
-      kDebugMode &&
-      defaultTargetPlatform == TargetPlatform.android) {
-    await InAppWebViewController.setWebContentsDebuggingEnabled(kDebugMode);
-  }
+  // if (!kIsWeb &&
+  //     kDebugMode &&
+  //     defaultTargetPlatform == TargetPlatform.android) {
+  //   await InAppWebViewController.setWebContentsDebuggingEnabled(kDebugMode);
+  // }
   await Permission.camera.request();
   await Permission.microphone.request(); // if you need microphone permission
 
-  var appDocDir = await getApplicationSupportDirectory();
-  print("appDocDir:${appDocDir.path}");
+  final appDocDir = await getApplicationSupportDirectory();
+
   var webDir = Directory(path.join(appDocDir.path, "web"));
+  print("IndexHtml Path=========================:" +
+      path.join(webDir.path, 'index.html'));
   if (!webDir.existsSync()) {
     print("unzip...");
     var data = await rootBundle.load("assets/web.zip");
@@ -60,6 +61,7 @@ Future main() async {
       serverAddr = WebUri("http://localhost:$port");
     }
   }
+
   // Enable content compression
   server.autoCompress = true;
   print('Serving at http://${server.address.host}:${server.port}');
@@ -72,6 +74,17 @@ class MyApp extends StatefulWidget {
   @override
   State<MyApp> createState() => _MyAppState();
 }
+
+InAppWebViewSettings settings = InAppWebViewSettings(
+    useOnDownloadStart: true,
+    allowsBackForwardNavigationGestures: true,
+    javaScriptEnabled: true,
+    // useShouldOverrideUrlLoading: true,
+    // mediaPlaybackRequiresUserGesture: false,
+    // allowsInlineMediaPlayback: true,
+    // useHybridComposition: true,
+    // useOnLoadResource: true
+    );
 
 class _MyAppState extends State<MyApp> {
   final GlobalKey webViewKey = GlobalKey();
@@ -112,13 +125,20 @@ class _MyAppState extends State<MyApp> {
               child: InAppWebView(
                 key: webViewKey,
                 initialUrlRequest: URLRequest(url: serverAddr),
-                initialSettings: InAppWebViewSettings(
-                    useOnDownloadStart: true,
-                    allowsBackForwardNavigationGestures: true),
+                // initialFile:'assets/web/index.html',
+                initialSettings: settings,
                 onWebViewCreated: (controller) {
                   webViewController = controller;
+                  // webViewController?.loadFile(
+                  //     assetFilePath: 'assets/web/index.html');
+
+                  // if (Platform.isAndroid) {
+                  //   InAppWebViewController.setWebContentsDebuggingEnabled(
+                  //       true); // 启用调试模式
+                  // }
                 },
                 onDownloadStartRequest: (controller, url) async {
+                  print("url================================"+url.toString());
                   if (url.url.scheme == "data") {
                     String? outputFile = await FilePicker.platform.saveFile(
                         dialogTitle: 'Please select an output file:',

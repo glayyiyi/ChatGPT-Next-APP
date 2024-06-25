@@ -6,5 +6,5 @@ flutter_launcher_icons:
     generate: true
   macos:
     generate: true
-  image_path: "assets/icons/icon.png"
+  image_path: "assets/icons/icon-new.png"
 app_name: "BRClient"
